@@ -1,0 +1,57 @@
+services:
+  app:
+    build: .
+    container_name: appcine_app
+    working_dir: /var/www
+    ports:
+      - "8081:80"
+    volumes:
+      - .:/var/www
+      - vendor_data:/var/www/vendor
+      - node_modules_data:/var/www/node_modules
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_URL: http://localhost:8081
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: appcine
+      DB_USERNAME: appcine
+      DB_PASSWORD: secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      bash -c "
+        set -e
+        [ -f .env ] || cp .env.example .env
+        composer install --no-interaction --prefer-dist
+        grep -qE '^APP_KEY=base64:' .env || php artisan key:generate --force
+        php artisan migrate --force
+        [ -f public/build/manifest.json ] || (npm install --ignore-scripts && npm run build)
+        php artisan serve --host=0.0.0.0 --port=80
+      "
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: appcine_postgres
+    environment:
+      POSTGRES_DB: appcine
+      POSTGRES_USER: appcine
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appcine -d appcine"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  pgdata:
+  vendor_data:
+  node_modules_data:
